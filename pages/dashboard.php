@@ -48,7 +48,7 @@ $where_clause = "WHERE status_berlangganan = 'Aktif'";
 $params = [];
 
 if (!empty($search)) {
-    $where_clause .= " AND (id_pelanggan LIKE :search OR nama LIKE :search OR ip_modem LIKE :search OR alamat LIKE :search OR pppoe_profile LIKE :search)";
+    $where_clause .= " AND (id_pelanggan LIKE :search OR nama LIKE :search OR ip_modem LIKE :search OR caller_id LIKE :search OR alamat LIKE :search OR pppoe_profile LIKE :search)";
     $params[':search'] = "%$search%";
 }
 
@@ -60,10 +60,10 @@ $total_rows = $total_stmt->fetch()['total'];
 $total_pages = ($total_rows > 0) ? ceil($total_rows / $limit) : 1;
 
 // Ambil data pelanggan
-$sql = "SELECT id_pelanggan, nama, alamat, ip_modem, status_ping, pppoe_profile, live_latency,
-               status_pembayaran, no_telp, service_name, status_berlangganan, router_id
+$sql = "SELECT id_pelanggan, nama, alamat, ip_modem, caller_id, status_ping, pppoe_profile, live_latency,
+               status_pembayaran, no_telp, service_name, status_berlangganan, router_id, id_billing 
         FROM pelanggan 
-        $where_clause 
+        $where_clause
         ORDER BY 
             CASE WHEN status_ping = 'ONLINE' THEN 0 ELSE 1 END,
             $sort_column $sort_order_sql
@@ -979,7 +979,7 @@ canvas {
         <input type="hidden" name="sort" value="<?php echo $sort_column; ?>">
         <input type="hidden" name="order" value="<?php echo $sort_order; ?>">
         
-        <input type="text" name="search" placeholder="🔍 Cari ID, Nama, IP, Alamat, atau Profile..." 
+        <input type="text" name="search" placeholder="🔍 Cari ID, Nama, IP, MAC, Alamat, atau Profile..." 
                value="<?php echo htmlspecialchars($search); ?>">
         
         <button type="submit" class="btn-primary">🔍 Cari</button>
@@ -991,6 +991,10 @@ canvas {
         <button type="button" class="btn-sync" id="syncRouterBtn" onclick="syncAllRoutersWithModal()">
             🔄 Sinkronisasi Router
         </button>
+        
+        <a href="index.php?page=import_csv" class="btn-sync" style="background: linear-gradient(135deg, #27ae60, #2ecc71); text-decoration: none; margin-left: 5px;">
+    📂 Import CSV
+</a>
     </form>
     
     <div style="overflow-x: auto;">
@@ -1033,6 +1037,9 @@ canvas {
                                     <a href="#" onclick="showRemoteModal('<?php echo htmlspecialchars($pelanggan['ip_modem']); ?>', '<?php echo htmlspecialchars($pelanggan['nama']); ?>'); return false;" class="ip-link">
                                         🖥️ <?php echo htmlspecialchars($pelanggan['ip_modem']); ?>
                                     </a>
+                                    <div style="font-size: 11px; color: #7f8c8d; margin-top: 4px; font-family: monospace; padding-left: 5px;">
+                                        🔑 <?php echo htmlspecialchars($pelanggan['caller_id'] ?? '-'); ?>
+                                    </div>
                                 <?php else: ?>
                                     <span style="color: #999;">❓ <?php echo htmlspecialchars($pelanggan['ip_modem']); ?></span>
                                 <?php endif; ?>
@@ -1705,4 +1712,86 @@ window.onclick = function(event) {
         if (!syncInProgress) closeSyncModal();
     }
 }
+
+// === FITUR LIVE SEARCH (SEARCH AS YOU TYPE) ===
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.querySelector('input[name="search"]');
+    const searchForm = document.getElementById('searchForm');
+    let debounceTimer;
+
+    if (searchInput && searchForm) {
+        // Deteksi setiap perubahan karakter saat mengetik
+        searchInput.addEventListener('input', function(e) {
+            clearTimeout(debounceTimer); // Reset timer jika masih mengetik
+            
+            // Sinkronisasi keyword ke hidden input agar tidak hilang saat pindah halaman (pagination)
+            const sortSearchInput = document.getElementById('search_input');
+            if (sortSearchInput) sortSearchInput.value = e.target.value;
+
+            // Tunda pencarian 400ms (Debounce) agar performa server tetap aman
+            debounceTimer = setTimeout(function() {
+                const tbody = document.querySelector('.data-table tbody');
+                if (tbody) tbody.style.opacity = '0.3'; // Beri efek redup sebagai indikator loading
+
+                const formData = new FormData(searchForm);
+                
+                // Kirim request di background
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    
+                    // 1. Ganti Isi Tabel Secara Halus
+                    const currentTableWrapper = document.querySelector('.data-table').parentElement;
+                    const newTableWrapper = doc.querySelector('.data-table').parentElement;
+                    
+                    if (currentTableWrapper && newTableWrapper) {
+                        currentTableWrapper.innerHTML = newTableWrapper.innerHTML;
+                        currentTableWrapper.querySelector('.data-table tbody').style.opacity = '1';
+                    }
+
+                    // 2. Perbarui Pagination dan Info Text
+                    // Hapus elemen pagination & info lama
+                    let sibling = currentTableWrapper.nextElementSibling;
+                    while (sibling) {
+                        let next = sibling.nextElementSibling;
+                        sibling.remove();
+                        sibling = next;
+                    }
+
+                    // Masukkan elemen pagination & info baru yang didapat dari server
+                    let newSibling = newTableWrapper.nextElementSibling;
+                    while (newSibling) {
+                        currentTableWrapper.parentElement.appendChild(newSibling.cloneNode(true));
+                        newSibling = newSibling.nextElementSibling;
+                    }
+
+                    // 3. Munculkan/Sembunyikan Tombol Reset
+                    const currentResetBtn = searchForm.querySelector('.btn-warning');
+                    const newResetBtn = doc.getElementById('searchForm').querySelector('.btn-warning');
+
+                    if (newResetBtn && !currentResetBtn) {
+                        const searchBtn = searchForm.querySelector('.btn-primary');
+                        searchBtn.insertAdjacentElement('afterend', newResetBtn.cloneNode(true));
+                    } else if (!newResetBtn && currentResetBtn) {
+                        currentResetBtn.remove();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saat Live Search:', error);
+                    if (tbody) tbody.style.opacity = '1';
+                });
+            }, 400); 
+        });
+
+        // Cegah halaman me-reload ketika menekan tombol Enter
+        searchForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+        });
+    }
+});
 </script>

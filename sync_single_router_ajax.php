@@ -90,90 +90,112 @@ if ($active_http_code === 200) {
 }
 
 // ============================================
-// 3. PROSES SINKRONISASI
+// 3. PROSES SINKRONISASI (IMPROVED)
 // ============================================
 $inserted = 0;
 $updated = 0;
+$synced_users = []; // Menyimpan daftar ID yang tersinkronisasi
 
 foreach ($users as $user) {
-    $id_pelanggan = $user['name'] ?? '';
-    if (empty($id_pelanggan)) continue;
-    
-    $is_disabled = isset($user['disabled']) && $user['disabled'] == 'true';
-    $status_berlangganan = $is_disabled ? 'Nonaktif' : 'Aktif';
-    
-    // Cek online status
-    $is_active_online = isset($active_users[$id_pelanggan]);
-    $status_ping = $is_active_online ? 'ONLINE' : 'OFFLINE';
-    
-    // IP Modem dari active session
-    $ip_modem = '-';
-    if ($is_active_online && isset($active_users[$id_pelanggan]['address'])) {
-        $ip_modem = $active_users[$id_pelanggan]['address'];
+    try {
+        $id_pelanggan = $user['name'] ?? '';
+        if (empty($id_pelanggan)) continue;
+        
+        $synced_users[] = $id_pelanggan;
+        
+        // FIX: Menangani tipe data boolean atau string dari REST API Mikrotik
+        $disabled_val = $user['disabled'] ?? false;
+        $is_disabled = filter_var($disabled_val, FILTER_VALIDATE_BOOLEAN);
+        $status_berlangganan = $is_disabled ? 'Nonaktif' : 'Aktif';
+        
+        // Cek online status
+        $is_active_online = isset($active_users[$id_pelanggan]);
+        $status_ping = $is_active_online ? 'ONLINE' : 'OFFLINE';
+        
+        // IP Modem dari active session
+        $ip_modem = '-';
+        $caller_id = '-';
+        if ($is_active_online && isset($active_users[$id_pelanggan]['address'])) {
+            $ip_modem = $active_users[$id_pelanggan]['address'];
+        }
+        if (isset($active_users[$id_pelanggan]['caller-id'])) {
+            $caller_id = $active_users[$id_pelanggan]['caller-id'];
+        }
+        
+        $pppoe_profile = $user['profile'] ?? '';
+        $rate_limit = $user['rate-limit'] ?? '';
+        $service_name = $user['service'] ?? 'pppoe';
+        
+        // Cek apakah sudah ada
+        $stmt_cek = $pdo->prepare("SELECT id_pelanggan FROM pelanggan WHERE id_pelanggan = ?");
+        $stmt_cek->execute([$id_pelanggan]);
+        
+        if ($stmt_cek->fetch()) {
+            // UPDATE
+            $sql = "UPDATE pelanggan SET 
+                nama = ?,  
+                ip_modem = ?,
+                caller_id = ?, 
+                status_ping = ?, 
+                status_berlangganan = ?,
+                pppoe_profile = ?, 
+                rate_limit = ?, 
+                service_name = ?, 
+                router_id = ?,
+                sync_count = sync_count + 1, 
+                last_sync = NOW()
+                WHERE id_pelanggan = ?";
+            $stmt_up = $pdo->prepare($sql);
+            $stmt_up->execute([
+                $user['name'], $ip_modem, $caller_id, $status_ping, $status_berlangganan,
+                $pppoe_profile, $rate_limit, $service_name, $router_id, $id_pelanggan
+            ]);
+            $updated++;
+        } else {
+            // INSERT
+            $sql = "INSERT INTO pelanggan (
+                id_pelanggan, 
+                nama, 
+                alamat, 
+                ip_modem,
+                caller_id, 
+                status_ping,
+                status_pembayaran, 
+                tagihan, no_telp, 
+                status_berlangganan,
+                pppoe_profile, 
+                rate_limit, 
+                service_name, 
+                router_id,
+                sync_count, last_sync, created_at
+            ) VALUES (
+                ?, ?, 'Alamat belum diisi', ?, ?, ?, 'belum bayar', 0, NULL,
+                ?, ?, ?, ?, ?, 1, NOW(), NOW()
+            )";
+            $stmt_in = $pdo->prepare($sql);
+            $stmt_in->execute([
+                $id_pelanggan, $user['name'], $ip_modem, $caller_id, $status_ping,
+                $status_berlangganan, $pppoe_profile, $rate_limit, $service_name, $router_id
+            ]);
+            $inserted++;
+        }
+    } catch (PDOException $e) {
+        // Melanjutkan loop meskipun ada 1 user yang gagal masuk database
+        error_log("Gagal sync user {$id_pelanggan}: " . $e->getMessage());
+        continue;
     }
+}
+
+// Tandai user sebagai Nonaktif jika tidak terdeteksi di WinBox selama sync ini
+// (Hanya berlaku untuk user milik router ini)
+if (count($synced_users) > 0) {
+    $placeholders = implode(',', array_fill(0, count($synced_users), '?'));
+    $sql_cleanup = "UPDATE pelanggan SET status_berlangganan = 'Dihapus/Nonaktif', status_ping = 'OFFLINE' 
+                    WHERE router_id = ? AND id_pelanggan NOT IN ($placeholders)";
     
-    $pppoe_profile = $user['profile'] ?? '';
-    $rate_limit = $user['rate-limit'] ?? '';
-    $service_name = $user['service'] ?? 'pppoe';
-    
-    // Cek apakah sudah ada
-    $stmt_cek = $pdo->prepare("SELECT id_pelanggan FROM pelanggan WHERE id_pelanggan = ?");
-    $stmt_cek->execute([$id_pelanggan]);
-    
-    if ($stmt_cek->fetch()) {
-        // UPDATE
-        $sql = "UPDATE pelanggan SET 
-            nama = ?,
-            ip_modem = ?,
-            status_ping = ?,
-            status_berlangganan = ?,
-            pppoe_profile = ?,
-            rate_limit = ?,
-            service_name = ?,
-            router_id = ?,
-            sync_count = sync_count + 1,
-            last_sync = NOW()
-            WHERE id_pelanggan = ?";
-        $stmt_up = $pdo->prepare($sql);
-        $stmt_up->execute([
-            $user['name'],
-            $ip_modem,
-            $status_ping,
-            $status_berlangganan,
-            $pppoe_profile,
-            $rate_limit,
-            $service_name,
-            $router_id,
-            $id_pelanggan
-        ]);
-        $updated++;
-    } else {
-        // INSERT
-        $sql = "INSERT INTO pelanggan (
-            id_pelanggan, nama, alamat, ip_modem, status_ping,
-            status_pembayaran, tagihan, no_telp,
-            status_berlangganan, pppoe_profile, rate_limit, service_name,
-            router_id, sync_count, last_sync, created_at
-        ) VALUES (
-            ?, ?, 'Alamat belum diisi', ?, ?,
-            'belum bayar', 0, NULL,
-            ?, ?, ?, ?,
-            ?, 1, NOW(), NOW()
-        )";
-        $stmt_in = $pdo->prepare($sql);
-        $stmt_in->execute([
-            $id_pelanggan,
-            $user['name'],
-            $ip_modem,
-            $status_ping,
-            $status_berlangganan,
-            $pppoe_profile,
-            $rate_limit,
-            $service_name,
-            $router_id
-        ]);
-        $inserted++;
-    }
+    $params = array_merge([$router_id], $synced_users);
+    $stmt_cleanup = $pdo->prepare($sql_cleanup);
+    $stmt_cleanup->execute($params);
 }
 
 // ============================================
