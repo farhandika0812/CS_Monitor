@@ -48,7 +48,7 @@ $where_clause = "WHERE status_berlangganan = 'Aktif'";
 $params = [];
 
 if (!empty($search)) {
-    $where_clause .= " AND (id_pelanggan LIKE :search OR nama LIKE :search OR ip_modem LIKE :search OR caller_id LIKE :search OR alamat LIKE :search OR pppoe_profile LIKE :search)";
+    $where_clause .= " AND (id_pelanggan LIKE :search OR nama LIKE :search OR ip_modem LIKE :search OR caller_id LIKE :search OR id_billing LIKE :search OR alamat LIKE :search OR pppoe_profile LIKE :search)";
     $params[':search'] = "%$search%";
 }
 
@@ -979,7 +979,7 @@ canvas {
         <input type="hidden" name="sort" value="<?php echo $sort_column; ?>">
         <input type="hidden" name="order" value="<?php echo $sort_order; ?>">
         
-        <input type="text" name="search" placeholder="🔍 Cari ID, Nama, IP, MAC, Alamat, atau Profile..." 
+        <input type="text" name="search" placeholder="🔍 Cari Nama, ID Billing, IP, MAC, Alamat..." 
                value="<?php echo htmlspecialchars($search); ?>">
         
         <button type="submit" class="btn-primary">🔍 Cari</button>
@@ -1001,8 +1001,10 @@ canvas {
         <table class="data-table" style="width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 8px rgba(0,0,0,0.05);">
             <thead>
                 <tr>
-                    <th style="padding: 12px 12px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #e9ecef;"><a href="#" onclick="sortTable('id_pelanggan'); return false;">🆔 ID Pelanggan <?php echo $sort_column == 'id_pelanggan' ? ($sort_order == 'asc' ? '↑' : '↓') : '⇅'; ?></a></th>
-                    <th style="padding: 12px 12px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #e9ecef;"><a href="#" onclick="sortTable('nama'); return false;">👤 Nama <?php echo $sort_column == 'nama' ? ($sort_order == 'asc' ? '↑' : '↓') : '⇅'; ?></a></th>
+                    <th style="padding: 12px 12px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #e9ecef;"><a href="#" onclick="sortTable('nama'); return false;">👤 Nama Pelanggan <?php echo $sort_column == 'nama' ? ($sort_order == 'asc' ? '↑' : '↓') : '⇅'; ?></a></th>
+                    
+                    <th style="padding: 12px 12px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #e9ecef;"><a href="#" onclick="sortTable('id_pelanggan'); return false;">⚙️ PPPoE pelanggan <?php echo $sort_column == 'id_pelanggan' ? ($sort_order == 'asc' ? '↑' : '↓') : '⇅'; ?></a></th>
+                    
                     <th style="padding: 12px 12px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #e9ecef;"><a href="#" onclick="sortTable('alamat'); return false;">📍 Alamat <?php echo $sort_column == 'alamat' ? ($sort_order == 'asc' ? '↑' : '↓') : '⇅'; ?></a></th>
                     <th style="padding: 12px 12px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #e9ecef;"><a href="#" onclick="sortTable('ip_modem'); return false;">🌐 IP Modem <?php echo $sort_column == 'ip_modem' ? ($sort_order == 'asc' ? '↑' : '↓') : '⇅'; ?></a></th>
                     <th style="padding: 12px 12px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #e9ecef;"><a href="#" onclick="sortTable('pppoe_profile'); return false;">⚙️ PPPoE Profile <?php echo $sort_column == 'pppoe_profile' ? ($sort_order == 'asc' ? '↑' : '↓') : '⇅'; ?></a></th>
@@ -1013,9 +1015,6 @@ canvas {
                 <?php if (count($pelanggan_list) > 0): ?>
                     <?php foreach ($pelanggan_list as $pelanggan): ?>
                         <tr style="border-bottom: 1px solid #e9ecef;">
-                            <td style="padding: 10px 12px; font-family: monospace; word-break: break-word;">
-                                <?php echo htmlspecialchars(substr($pelanggan['id_pelanggan'], 0, 30)) . (strlen($pelanggan['id_pelanggan']) > 30 ? '...' : ''); ?>
-                            </td>
                             <td style="padding: 10px 12px; font-weight: 500; word-break: break-word;">
                                 <a href="#" onclick="showDetailModal(
                                     '<?php echo htmlspecialchars(addslashes($pelanggan['nama'])); ?>',
@@ -1028,10 +1027,21 @@ canvas {
                                 ); return false;" class="nama-link">
                                     <?php echo htmlspecialchars($pelanggan['nama']); ?>
                                 </a>
+                                <?php if(!empty($pelanggan['id_billing']) && $pelanggan['id_billing'] != '-'): ?>
+                                    <div style="font-size: 11px; color: #95a5a6; margin-top: 4px;">
+                                        🆔 <?php echo htmlspecialchars($pelanggan['id_billing']); ?>
+                                    </div>
+                                <?php endif; ?>
                             </td>
+
+                            <td style="padding: 10px 12px; font-family: monospace; word-break: break-word;">
+                                <?php echo htmlspecialchars(substr($pelanggan['id_pelanggan'], 0, 30)) . (strlen($pelanggan['id_pelanggan']) > 30 ? '...' : ''); ?>
+                            </td>
+
                             <td style="padding: 10px 12px; color: #666; word-break: break-word;">
                                 <?php echo htmlspecialchars($pelanggan['alamat'] ?? '-'); ?>
                             </td>
+
                             <td style="padding: 10px 12px;">
                                 <?php if (!empty($pelanggan['ip_modem']) && $pelanggan['ip_modem'] != '-' && filter_var($pelanggan['ip_modem'], FILTER_VALIDATE_IP)): ?>
                                     <a href="#" onclick="showRemoteModal('<?php echo htmlspecialchars($pelanggan['ip_modem']); ?>', '<?php echo htmlspecialchars($pelanggan['nama']); ?>'); return false;" class="ip-link">
@@ -1044,20 +1054,21 @@ canvas {
                                     <span style="color: #999;">❓ <?php echo htmlspecialchars($pelanggan['ip_modem']); ?></span>
                                 <?php endif; ?>
                             </td>
+
                             <td style="padding: 10px 12px; font-family: monospace; word-break: break-word;">
                                 <?php 
                                 $profile = $pelanggan['pppoe_profile'] ?? '-';
                                 echo htmlspecialchars(substr($profile, 0, 25)) . (strlen($profile) > 25 ? '...' : '');
                                 ?>
-                            </div>
+                            </td>
+
                             <td style="padding: 10px 12px; text-align: center;">
                                 <div onclick="showPingModal('<?php echo htmlspecialchars($pelanggan['ip_modem']); ?>', '<?php echo htmlspecialchars($pelanggan['nama']); ?>')" 
                                      class="<?php echo $pelanggan['status_ping'] == 'ONLINE' ? 'status-online' : 'status-offline'; ?>" 
                                      title="Klik untuk melihat grafik ping">
-                                    <!-- Icon Sitemap / Network Topology (Font Awesome sitemap) -->
                                     <i class="fas fa-sitemap" style="color: white; font-size: 16px;"></i>
                                 </div>
-                            </div>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
@@ -1069,7 +1080,7 @@ canvas {
                     </tr>
                 <?php endif; ?>
             </tbody>
-          </table>
+        </table>
     </div>
     
     <?php if ($total_pages > 1): ?>

@@ -694,9 +694,11 @@ if ($role == 'super_admin') {
         // Definisikan halaman yang diizinkan berdasarkan role
         $allowedPages = [];
         if ($role == 'super_admin') {
-            $allowedPages = ['dashboard', 'manage_router', 'manage_user', 'performa_cs', 'log_cs', 'tools'];
+            // TAMBAHKAN 'import_csv' DI SINI
+            $allowedPages = ['dashboard', 'manage_router', 'manage_user', 'performa_cs', 'log_cs', 'tools', 'import_csv'];
         } elseif ($role == 'admin') {
-            $allowedPages = ['dashboard', 'manage_user', 'performa_cs', 'log_cs', 'tools'];
+            // TAMBAHKAN 'import_csv' DI SINI
+            $allowedPages = ['dashboard', 'manage_user', 'performa_cs', 'log_cs', 'tools', 'import_csv'];
         } else {
             $allowedPages = ['dashboard', 'log_cs'];
         }
